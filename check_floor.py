@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import sys
 import os
+import json
+from datetime import datetime
 
 # US amateur radio bands within RTL-SDR range (Hz)
 HAM_BANDS = [
@@ -22,20 +24,19 @@ def band_for_freq(hz):
     return None
 
 
-def analyze_rf_csv(file_path):
-    if not os.path.exists(file_path):
-        print(f"Error: {file_path} not found.")
-        return
+def status_for(avg):
+    if avg > -60:
+        return "CRITICAL"
+    elif avg > -75:
+        return "WARNING"
+    return "NOMINAL"
 
-    try:
-        df = pd.read_csv(file_path, header=None)
-    except Exception as e:
-        print(f"Error reading CSV: {e}")
-        return
 
-    # rtl_power CSV columns: date, time, hz_low, hz_high, hz_step, samples, [power...]
+def collect_band_data(file_path):
+    df = pd.read_csv(file_path, header=None)
     band_data = {name: [] for name, _, _ in HAM_BANDS}
 
+    # rtl_power CSV columns: date, time, hz_low, hz_high, hz_step, samples, [power...]
     for _, row in df.iterrows():
         try:
             hz_low  = float(row[2])
@@ -49,6 +50,10 @@ def analyze_rf_csv(file_path):
         except (ValueError, TypeError):
             continue
 
+    return band_data
+
+
+def print_human(file_path, band_data):
     print(f"--- RF NOISE REPORT: {os.path.basename(file_path)} ---")
     print(f"{'Band':<8} {'Avg (dBm)':>10} {'Peak (dBm)':>11} {'Samples':>8}  Status")
     print("-" * 60)
@@ -61,24 +66,63 @@ def analyze_rf_csv(file_path):
             continue
         any_data = True
         arr  = np.array(vals)
-        avg  = np.mean(arr)
-        peak = np.max(arr)
-
-        if avg > -60:
-            status = "CRITICAL - high noise"
-        elif avg > -75:
-            status = "WARNING  - elevated"
-        else:
-            status = "NOMINAL"
-
-        print(f"{name:<8} {avg:>10.2f} {peak:>11.2f} {len(vals):>8}  {status}")
+        avg  = float(np.mean(arr))
+        peak = float(np.max(arr))
+        print(f"{name:<8} {avg:>10.2f} {peak:>11.2f} {len(vals):>8}  {status_for(avg)}")
 
     if not any_data:
         print("No ham band data found. Check that the CSV covers ham band frequencies.")
 
 
+def print_json(file_path, band_data):
+    record = {
+        "timestamp": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "source_file": os.path.basename(file_path),
+        "bands": {}
+    }
+
+    for name, _, _ in HAM_BANDS:
+        vals = band_data[name]
+        if not vals:
+            record["bands"][name] = {"avg_dbm": None, "peak_dbm": None, "samples": 0, "status": "NO_DATA"}
+            continue
+        arr  = np.array(vals)
+        avg  = round(float(np.mean(arr)), 2)
+        peak = round(float(np.max(arr)), 2)
+        record["bands"][name] = {
+            "avg_dbm": avg,
+            "peak_dbm": peak,
+            "samples": len(vals),
+            "status": status_for(avg)
+        }
+
+    print(json.dumps(record))
+
+
+def analyze_rf_csv(file_path, as_json=False):
+    if not os.path.exists(file_path):
+        print(f"Error: {file_path} not found.")
+        return
+
+    try:
+        band_data = collect_band_data(file_path)
+    except Exception as e:
+        print(f"Error reading CSV: {e}")
+        return
+
+    if as_json:
+        print_json(file_path, band_data)
+    else:
+        print_human(file_path, band_data)
+
+
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python check_floor.py <path_to_csv>")
+    args = sys.argv[1:]
+    as_json = "--json" in args
+    files = [a for a in args if not a.startswith("--")]
+
+    if not files:
+        print("Usage: python check_floor.py <path_to_csv> [--json]")
         sys.exit(1)
-    analyze_rf_csv(sys.argv[1])
+
+    analyze_rf_csv(files[0], as_json=as_json)

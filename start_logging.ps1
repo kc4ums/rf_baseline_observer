@@ -1,6 +1,6 @@
 # RF Baseline Observer - Start Background Logging (Windows 11)
-# Captures a 7-day wideband sweep from 24 MHz to 1.7 GHz
-# Logs are written to %USERPROFILE%\rf_logs\
+# Sweeps ham bands 10m through 23cm (28 MHz - 1.3 GHz) at 100 kHz steps.
+# Logs are written to %USERPROFILE%\rf_logs\ as JSON Lines for easy analysis.
 
 param(
     [string]$OutputDir = "$env:USERPROFILE\rf_logs",
@@ -41,7 +41,7 @@ Write-Host ""
 $taskName = "RF_Baseline_Hourly_Report"
 $pythonPath = (Get-Command python).Source
 $scriptPath = Join-Path $PSScriptRoot "check_floor.py"
-$action = New-ScheduledTaskAction -Execute $pythonPath -Argument "`"$scriptPath`" `"$csvFile`" >> `"$logFile`" 2>&1"
+$action = New-ScheduledTaskAction -Execute $pythonPath -Argument "`"$scriptPath`" `"$csvFile`" --json >> `"$logFile`" 2>&1"
 $trigger = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Hours 1) -Once -At (Get-Date)
 
 # Remove existing task if present, then register
