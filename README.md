@@ -72,7 +72,7 @@ This starts `rtl_power` as a background job and registers an hourly Windows Task
 You can customize parameters:
 
 ```powershell
-.\start_logging.ps1 -OutputDir "D:\rf_data" -Freq "24M:1.7G:1M" -Interval "1h" -Duration "7d"
+.\start_logging.ps1 -OutputDir "D:\rf_data" -Freq "28M:1.3G:100K" -Interval "1h" -Duration "7d"
 ```
 
 ### Phase 2: Manual Analysis
@@ -107,7 +107,7 @@ JSON example:
 
 ### Phase 3: Review History Log
 
-The hourly scheduled task appends one JSON record per run to `%USERPROFILE%\rf_logs\rf_history.log` (JSON Lines format — one complete JSON object per line). This file can be fed directly to any AI or analysis tool for trend analysis.
+The hourly scheduled task appends one JSON record per run to `%USERPROFILE%\rf_logs\rf_history.log` (JSON Lines format — one complete JSON object per line). This structured format is easy to parse and analyze for noise floor trends over time.
 
 ```powershell
 Get-Content "$env:USERPROFILE\rf_logs\rf_history.log" -Wait
