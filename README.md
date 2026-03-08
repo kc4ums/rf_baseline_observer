@@ -11,6 +11,7 @@ This project establishes a high-resolution RF noise floor baseline on Windows 11
 - **Processor:** check_floor.py — per-band noise floor analysis (Python/Pandas)
 - **Scheduler:** Windows Task Scheduler (hourly JSON reports)
 - **TX Toggle:** toggle_rf.ps1 — pause/resume logging when transmitting
+- **Visualization:** SDR++ — realtime spectrum and waterfall display
 
 ### Monitored Ham Bands
 
@@ -123,6 +124,16 @@ The hourly scheduled task appends one JSON record per run to `%USERPROFILE%\rf_l
 ```powershell
 Get-Content "$env:USERPROFILE\rf_logs\rf_history.log" -Wait
 ```
+
+## Realtime Visualization
+
+For a live spectrum and waterfall display, use **SDR++**:
+
+1. Download from https://github.com/AlexandreRouma/SDRPlusPlus/releases
+2. Extract and run `sdrpp.exe` — no install required
+3. In SDR++: set Source to **RTL-SDR**, click **Play**
+
+> **Note:** SDR++ and `rtl_power` cannot use the dongle at the same time. Run `.\toggle_rf.ps1` to pause background logging before opening SDR++, and again to resume when done.
 
 ## Troubleshooting
 
