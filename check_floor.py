@@ -3,6 +3,7 @@ import numpy as np
 import sys
 import os
 import json
+import urllib.request
 from datetime import datetime
 
 # US amateur radio bands within RTL-SDR range (Hz)
@@ -15,6 +16,40 @@ HAM_BANDS = [
     ("33cm", 902_000_000,  928_000_000),
     ("23cm",1240_000_000, 1300_000_000),
 ]
+
+
+NOAA_KP_URL = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json"
+
+
+def fetch_kp():
+    """Fetch the latest Kp index from NOAA SWPC. Returns float or None."""
+    try:
+        with urllib.request.urlopen(NOAA_KP_URL, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+        # data[0] is header row; last entry is most recent
+        return float(data[-1][1])
+    except Exception:
+        return None
+
+
+def kp_condition(kp):
+    if kp is None:
+        return "UNKNOWN"
+    if kp <= 1:
+        return "QUIET"
+    if kp <= 3:
+        return "UNSETTLED"
+    if kp <= 4:
+        return "ACTIVE"
+    if kp <= 5:
+        return "G1-MINOR"
+    if kp <= 6:
+        return "G2-MODERATE"
+    if kp <= 7:
+        return "G3-STRONG"
+    if kp <= 8:
+        return "G4-SEVERE"
+    return "G5-EXTREME"
 
 
 def band_for_freq(hz):
@@ -53,8 +88,12 @@ def collect_band_data(file_path):
     return band_data
 
 
-def print_human(file_path, band_data):
+def print_human(file_path, band_data, kp=None):
     print(f"--- RF NOISE REPORT: {os.path.basename(file_path)} ---")
+    if kp is not None:
+        print(f"Space Weather:  Kp={kp:.1f}  [{kp_condition(kp)}]")
+    else:
+        print("Space Weather:  Kp=N/A  (use --kp or --fetch-kp)")
     print(f"{'Band':<8} {'Avg (dBm)':>10} {'Peak (dBm)':>11} {'Samples':>8}  Status")
     print("-" * 60)
 
@@ -74,10 +113,14 @@ def print_human(file_path, band_data):
         print("No ham band data found. Check that the CSV covers ham band frequencies.")
 
 
-def print_json(file_path, band_data):
+def print_json(file_path, band_data, kp=None):
     record = {
         "timestamp": datetime.utcnow().isoformat(timespec="seconds") + "Z",
         "source_file": os.path.basename(file_path),
+        "space_weather": {
+            "kp_index": kp,
+            "condition": kp_condition(kp)
+        },
         "bands": {}
     }
 
@@ -99,7 +142,7 @@ def print_json(file_path, band_data):
     print(json.dumps(record))
 
 
-def analyze_rf_csv(file_path, as_json=False):
+def analyze_rf_csv(file_path, as_json=False, kp=None):
     if not os.path.exists(file_path):
         print(f"Error: {file_path} not found.")
         return
@@ -111,18 +154,36 @@ def analyze_rf_csv(file_path, as_json=False):
         return
 
     if as_json:
-        print_json(file_path, band_data)
+        print_json(file_path, band_data, kp=kp)
     else:
-        print_human(file_path, band_data)
+        print_human(file_path, band_data, kp=kp)
 
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    as_json = "--json" in args
-    files = [a for a in args if not a.startswith("--")]
+    as_json   = "--json"     in args
+    fetch_kp_ = "--fetch-kp" in args
+
+    # --kp <value>
+    kp = None
+    if "--kp" in args:
+        idx = args.index("--kp")
+        try:
+            kp = float(args[idx + 1])
+        except (IndexError, ValueError):
+            print("Error: --kp requires a numeric value (e.g. --kp 2.3)")
+            sys.exit(1)
+    elif fetch_kp_:
+        kp = fetch_kp()
+        if kp is None:
+            print("Warning: Could not fetch Kp index from NOAA. Continuing without it.")
+
+    files = [a for a in args if not a.startswith("--") and not (
+        args.index(a) > 0 and args[args.index(a) - 1] == "--kp"
+    )]
 
     if not files:
-        print("Usage: python check_floor.py <path_to_csv> [--json]")
+        print("Usage: python check_floor.py <path_to_csv> [--json] [--kp <value>] [--fetch-kp]")
         sys.exit(1)
 
-    analyze_rf_csv(files[0], as_json=as_json)
+    analyze_rf_csv(files[0], as_json=as_json, kp=kp)

@@ -61,47 +61,58 @@ This installs the required Python packages (`pandas`, `numpy`) and verifies your
 
 ## Operation Workflow
 
-### Phase 1: Start Background Logging
+### Phase 1: Continuous Logging (Recommended)
 
-Run the logging script from PowerShell (Administrator recommended for Task Scheduler registration):
-
-```powershell
-.\start_logging.ps1
-```
-
-This starts `rtl_power` as a background job and registers an hourly Windows Task Scheduler task to generate reports. Logs are written to `%USERPROFILE%\rf_logs\`.
-
-You can customize parameters:
+For long-term baseline collection, run the continuous logging script. It loops forever — each cycle runs a 1-hour sweep, auto-fetches the Kp index from NOAA, analyzes the result, and appends a JSON record to the history log. A new timestamped CSV is created each hour.
 
 ```powershell
-.\start_logging.ps1 -OutputDir "D:\rf_data" -Freq "28M:1.3G:100K" -Interval "1h" -Duration "7d"
+.\run_continuous.ps1
 ```
+
+Optional parameters:
+
+```powershell
+.\run_continuous.ps1 -OutputDir "D:\rf_data" -Freq "28M:1.3G:100K"
+```
+
+Press **Ctrl+C** to stop. Each completed hour is already saved and logged before the next cycle begins.
 
 ### Pausing Logging While Transmitting
 
-If you need to transmit on your transceiver, pause the SDR first to free the USB device and avoid interference:
+If you need to transmit on your transceiver, press **Ctrl+C** to stop the continuous logger first (frees the USB device), then run it again when done:
 
 ```powershell
 .\toggle_rf.ps1
 ```
 
-Run it again after transmitting to resume logging. Each resume starts a new CSV with a fresh timestamp.
+Or simply stop and restart `run_continuous.ps1`. Each resume starts a new CSV with a fresh timestamp.
 
 ### Phase 2: Manual Analysis
 
-Analyze any collected CSV at any time. Use `--json` for machine-readable output or omit it for a human-readable table:
+Analyze any collected CSV at any time. Use `--json` for machine-readable output or omit it for a human-readable table.
+
+#### Space Weather Flagging
+
+Geomagnetic activity (solar storms, elevated Kp index) raises the noise floor on HF/VHF bands independently of local interference. Always include the Kp index when analyzing a baseline to identify disturbed conditions.
 
 ```powershell
-# Human-readable
-python check_floor.py "$env:USERPROFILE\rf_logs\baseline_<timestamp>.csv"
+# Human-readable, auto-fetch Kp from NOAA (requires internet)
+python check_floor.py "$env:USERPROFILE\rf_logs\baseline_<timestamp>.csv" --fetch-kp
 
-# JSON (one line, structured)
-python check_floor.py "$env:USERPROFILE\rf_logs\baseline_<timestamp>.csv" --json
+# Human-readable, manually specify Kp
+python check_floor.py "$env:USERPROFILE\rf_logs\baseline_<timestamp>.csv" --kp 1.7
+
+# JSON with Kp
+python check_floor.py "$env:USERPROFILE\rf_logs\baseline_<timestamp>.csv" --json --fetch-kp
+
+# No Kp (legacy, not recommended for baseline work)
+python check_floor.py "$env:USERPROFILE\rf_logs\baseline_<timestamp>.csv"
 ```
 
 Human-readable example:
 ```
 --- RF NOISE REPORT: baseline_20260101_120000.csv ---
+Space Weather:  Kp=1.7  [UNSETTLED]
 Band     Avg (dBm)  Peak (dBm)  Samples  Status
 ------------------------------------------------------------
 10m         -83.12      -71.40     1024  NOMINAL
@@ -114,8 +125,23 @@ Band     Avg (dBm)  Peak (dBm)  Samples  Status
 
 JSON example:
 ```json
-{"timestamp": "2026-01-01T12:00:00Z", "source_file": "baseline_20260101_120000.csv", "bands": {"10m": {"avg_dbm": -83.12, "peak_dbm": -71.40, "samples": 1024, "status": "NOMINAL"}, "2m": {"avg_dbm": -76.20, "peak_dbm": -62.10, "samples": 492, "status": "WARNING"}, ...}}
+{"timestamp": "2026-01-01T12:00:00Z", "source_file": "baseline_20260101_120000.csv", "space_weather": {"kp_index": 1.7, "condition": "UNSETTLED"}, "bands": {"10m": {"avg_dbm": -83.12, "peak_dbm": -71.40, "samples": 1024, "status": "NOMINAL"}, "2m": {"avg_dbm": -76.20, "peak_dbm": -62.10, "samples": 492, "status": "WARNING"}, ...}}
 ```
+
+#### Kp Condition Scale
+
+| Kp    | Condition    | Effect on HF/VHF          |
+|-------|--------------|---------------------------|
+| 0–1   | QUIET        | Clean baseline             |
+| 2–3   | UNSETTLED    | Minor ionospheric variation |
+| 4     | ACTIVE       | Noticeable HF impact       |
+| 5     | G1-MINOR     | HF degradation possible    |
+| 6     | G2-MODERATE  | HF unreliable              |
+| 7     | G3-STRONG    | HF blackouts possible      |
+| 8     | G4-SEVERE    | Wide HF blackout           |
+| 9     | G5-EXTREME   | Total HF blackout          |
+
+> **Baseline tip:** Use only **Kp ≤ 1 (QUIET)** runs as your reference baseline when comparing pre- vs. post-construction readings.
 
 ### Phase 3: Review History Log
 
