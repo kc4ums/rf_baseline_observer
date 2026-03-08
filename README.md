@@ -10,6 +10,7 @@ This project establishes a high-resolution RF noise floor baseline on Windows 11
 - **Data Logger:** rtl_power (sweeps 28 MHz – 1.3 GHz at 100 kHz steps)
 - **Processor:** check_floor.py — per-band noise floor analysis (Python/Pandas)
 - **Scheduler:** Windows Task Scheduler (hourly JSON reports)
+- **TX Toggle:** toggle_rf.ps1 — pause/resume logging when transmitting
 
 ### Monitored Ham Bands
 
