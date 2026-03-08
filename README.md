@@ -51,7 +51,7 @@ Make sure to check "Add Python to PATH" during installation.
 Open PowerShell as Administrator and run:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 .\setup.ps1
 ```
 
@@ -74,6 +74,16 @@ You can customize parameters:
 ```powershell
 .\start_logging.ps1 -OutputDir "D:\rf_data" -Freq "28M:1.3G:100K" -Interval "1h" -Duration "7d"
 ```
+
+### Pausing Logging While Transmitting
+
+If you need to transmit on your transceiver, pause the SDR first to free the USB device and avoid interference:
+
+```powershell
+.\toggle_rf.ps1
+```
+
+Run it again after transmitting to resume logging. Each resume starts a new CSV with a fresh timestamp.
 
 ### Phase 2: Manual Analysis
 
