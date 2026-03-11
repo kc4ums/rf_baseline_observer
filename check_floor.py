@@ -6,8 +6,18 @@ import json
 import urllib.request
 from datetime import datetime
 
-# US amateur radio bands within RTL-SDR range (Hz)
+# US amateur radio bands within RTL-SDR V4 range (Hz)
+# HF bands (160m-10m) require direct sampling mode (-D 2) in rtl_power
 HAM_BANDS = [
+    ("160m",   1_800_000,    2_000_000),
+    ("80m",    3_500_000,    4_000_000),
+    ("60m",    5_330_500,    5_403_500),
+    ("40m",    7_000_000,    7_300_000),
+    ("30m",   10_100_000,   10_150_000),
+    ("20m",   14_000_000,   14_350_000),
+    ("17m",   18_068_000,   18_168_000),
+    ("15m",   21_000_000,   21_450_000),
+    ("12m",   24_890_000,   24_990_000),
     ("10m",   28_000_000,   29_700_000),
     ("6m",    50_000_000,   54_000_000),
     ("2m",   144_000_000,  148_000_000),
@@ -67,29 +77,43 @@ def status_for(avg):
     return "NOMINAL"
 
 
-def collect_band_data(file_path):
-    df = pd.read_csv(file_path, header=None)
+def collect_band_data(file_paths):
+    """Accept a single path or list of paths; merge all into one band_data dict."""
+    if isinstance(file_paths, str):
+        file_paths = [file_paths]
+
     band_data = {name: [] for name, _, _ in HAM_BANDS}
 
-    # rtl_power CSV columns: date, time, hz_low, hz_high, hz_step, samples, [power...]
-    for _, row in df.iterrows():
+    for file_path in file_paths:
         try:
-            hz_low  = float(row[2])
-            hz_step = float(row[4])
-            powers  = pd.to_numeric(row[6:], errors="coerce").dropna().values
-            for i, pwr in enumerate(powers):
-                freq = hz_low + i * hz_step
-                band = band_for_freq(freq)
-                if band:
-                    band_data[band].append(pwr)
-        except (ValueError, TypeError):
+            df = pd.read_csv(file_path, header=None)
+        except Exception as e:
+            print(f"Warning: could not read {file_path}: {e}", file=sys.stderr)
             continue
+
+        # rtl_power CSV columns: date, time, hz_low, hz_high, hz_step, samples, [power...]
+        for _, row in df.iterrows():
+            try:
+                hz_low  = float(row[2])
+                hz_step = float(row[4])
+                powers  = pd.to_numeric(row[6:], errors="coerce").dropna().values
+                for i, pwr in enumerate(powers):
+                    freq = hz_low + i * hz_step
+                    band = band_for_freq(freq)
+                    if band:
+                        band_data[band].append(pwr)
+            except (ValueError, TypeError):
+                continue
 
     return band_data
 
 
 def print_human(file_path, band_data, kp=None):
-    print(f"--- RF NOISE REPORT: {os.path.basename(file_path)} ---")
+    if isinstance(file_path, list):
+        label = ", ".join(os.path.basename(f) for f in file_path)
+    else:
+        label = os.path.basename(file_path)
+    print(f"--- RF NOISE REPORT: {label} ---")
     if kp is not None:
         print(f"Space Weather:  Kp={kp:.1f}  [{kp_condition(kp)}]")
     else:
@@ -114,9 +138,13 @@ def print_human(file_path, band_data, kp=None):
 
 
 def print_json(file_path, band_data, kp=None):
+    if isinstance(file_path, list):
+        source = [os.path.basename(f) for f in file_path]
+    else:
+        source = os.path.basename(file_path)
     record = {
         "timestamp": datetime.utcnow().isoformat(timespec="seconds") + "Z",
-        "source_file": os.path.basename(file_path),
+        "source_file": source,
         "space_weather": {
             "kp_index": kp,
             "condition": kp_condition(kp)
@@ -142,21 +170,27 @@ def print_json(file_path, band_data, kp=None):
     print(json.dumps(record))
 
 
-def analyze_rf_csv(file_path, as_json=False, kp=None):
-    if not os.path.exists(file_path):
-        print(f"Error: {file_path} not found.")
+def analyze_rf_csv(file_paths, as_json=False, kp=None):
+    if isinstance(file_paths, str):
+        file_paths = [file_paths]
+
+    missing = [f for f in file_paths if not os.path.exists(f)]
+    if missing:
+        for f in missing:
+            print(f"Error: {f} not found.")
         return
 
     try:
-        band_data = collect_band_data(file_path)
+        band_data = collect_band_data(file_paths)
     except Exception as e:
         print(f"Error reading CSV: {e}")
         return
 
+    label = file_paths if len(file_paths) > 1 else file_paths[0]
     if as_json:
-        print_json(file_path, band_data, kp=kp)
+        print_json(label, band_data, kp=kp)
     else:
-        print_human(file_path, band_data, kp=kp)
+        print_human(label, band_data, kp=kp)
 
 
 if __name__ == "__main__":
@@ -183,7 +217,7 @@ if __name__ == "__main__":
     )]
 
     if not files:
-        print("Usage: python check_floor.py <path_to_csv> [--json] [--kp <value>] [--fetch-kp]")
+        print("Usage: python check_floor.py <csv> [<csv2> ...] [--json] [--kp <value>] [--fetch-kp]")
         sys.exit(1)
 
-    analyze_rf_csv(files[0], as_json=as_json, kp=kp)
+    analyze_rf_csv(files, as_json=as_json, kp=kp)
